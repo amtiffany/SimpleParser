@@ -1,4 +1,5 @@
-﻿
+﻿module logicalOperationsHW.Parser
+
 type BinOp = 
     And | Or | Impl | Xor 
     member x.toString() =
@@ -85,6 +86,7 @@ let rec eval (e:Environment) (expr:Expr) =
 // printfn "%A" m.Groups
 
 
+// 1. Add tokenizing code for XOR operator as |+|. To this end you will need to create an active pattern LookAhead3
 
 let (|SeqEmpty|LookAhead1|) (xs: 'a seq) = 
   if Seq.isEmpty xs then SeqEmpty
@@ -97,8 +99,19 @@ let (|LookAhead2|_|) (xs: 'a seq) =
     | LookAhead1 (h, t) -> 
         match t with 
         | SeqEmpty -> None
-        | LookAhead1 (h2, t) -> Some (h,h2, t)
+        | LookAhead1 (h2, t) -> Some (h, h2, t)
 
+// [1] Added lookAhead3 that looks for the first 3 elements in a seq (if they exist)
+let (|LookAhead3|_|) (xs: 'a seq) =
+    match xs with
+    | SeqEmpty -> None
+    | LookAhead1 (h,t) ->
+        match t with
+        | SeqEmpty -> None
+        | LookAhead1 (h2, t) ->
+            match t with
+            | SeqEmpty -> None
+            | LookAhead1 (h3, t) -> Some(h, h2, h3, t)
 
 
 type Token = 
@@ -171,56 +184,87 @@ and recognize l s :seq<Token> =
     | LookAhead1('|',t) -> proceed (BinOp Or) t
     | LookAhead1('-',t) -> proceed Not t
     | LookAhead1(h,t) ->  recognize t $"{s}{h}"
+    | LookAhead3('|','+','|', t) -> proceed (BinOp Xor) t 
    
 
 type TokenizationError = BadIdentifier of string 
 type TokenizationResult = Result< seq<Token>, TokenizationError >
 
 
-let validate (tokensIn:seq<Token>) : TokenizationResult =
-    let rec validate' (tokens:seq<Token>) : TokenizationResult = 
+// [2] Modified validate function to return a sequence of TokenizationResult
+let validate (tokensIn:seq<Token>) : TokenizationResult seq =
+    let rec validate' (tokens:seq<Token>) : TokenizationResult seq = seq {
         match tokens with      
-        | SeqEmpty -> Result.Ok (tokensIn)
+        | SeqEmpty -> yield! Seq.empty // yield Result.Ok (tokensIn)
         | LookAhead1 (ID ident,t) -> 
             if isIdentifier ident then 
-                validate' t
-            else 
-                Result.Error <| BadIdentifier ident
+                yield! validate' t
+            else
+                yield! validate' t
+                yield Result.Error <| BadIdentifier ident
         | LookAhead1 (_, t) ->
-            validate' t
-          
+            yield! validate' t
+          }
 
     validate' tokensIn
-
     
     
-printfn "Stage 1:"
-let tokens = skipBlanks "hello -world  --(  bl | ah )  I & am  he->re   now" 
 
-for s in tokens do 
-    printfn "%A" s
+// added entry point
+[<EntryPoint>]
+let main argv =
+    let tokens0 = "hello -world ***** --(  bl | ah ) $ I & am  he->re $ now"
+    let tokens = skipBlanks tokens0 
+    
+    // function to format example output
+    let printResults tokens = 
+        printfn "Stage 1:"
+        
+        for s in tokens do 
+            printfn "%A" s
 
-printfn "Stage 2:"
-let res = validate tokens 
+        
+        printfn "Stage 2: (first validate function)"
+        let res = validate tokens 
 
-match res with
-| Error e -> 
-    printfn "%A" e
-| _ -> 
-    printfn "Success"
+        let mutable success = true
+        for i in res do
+            match i with
+            | Error e -> 
+                printfn "%A" e
+                success <- false
+            | _ -> 
+                ()
+                
+        if (success = true) then
+            printfn "Success"
+        
+        
+        printfn "(second validate function)"
+        let res2 = validate2 tokens
+        match res2 with
+        | Error e -> 
+            printfn "%A" e
+        | _ -> 
+            printfn "Success"
+        
+    
+    printfn "\n\n%A" tokens0
+    printResults tokens
+    
+    
+    for i in argv do
+        printfn "\n\n%A" i
+        printResults (skipBlanks i)
+    
+    0
+
+
 
 
 
 // TODO:
-// 1. Add tokenizing code for XOR operator as |+|. To this end you will need to create an active pattern LookAhead3
-// 2. Modify validator code to report on all bad identifiers that occur
-// 3. Have the program take input from the command line instead of a constant string
-// 4. Think about using the same techniques to construct a syntax tree from the string
-
-
-
-
-
-
-
-
+// 1. [DONE] Add tokenizing code for XOR operator as |+|. To this end you will need to create an active pattern LookAhead3
+// 2. [DONE] Modify validator code to report on all bad identifiers that occur
+// 3. [DONE] Have the program take input from the command line instead of a constant string
+// 4. [DONE] Think about using the same techniques to construct a syntax tree from the string
